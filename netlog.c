@@ -13,6 +13,14 @@
 #define READ_FROM_IFCONFIG 2
 #endif
 
+#ifndef READ_STR_SIZE
+#define READ_STR_SIZE 512
+#endif
+
+#ifndef NAME_SIZE
+#define NAME_SIZE 128
+#endif
+
 struct log {
 	unsigned long long rx_bytes;
 	unsigned long long tx_bytes;
@@ -70,7 +78,7 @@ char *find_colon(char *p) {
 
 int read_proc(char *interface, struct log *netlog) {
 	FILE *fp;
-	char buffer[512];
+	char buffer[READ_STR_SIZE];
 	fp = fopen("/proc/net/dev", "r");
 	if(fp == NULL) {
 		fprintf(stderr, "Error opening file /proc/net/dev\n");
@@ -82,7 +90,7 @@ int read_proc(char *interface, struct log *netlog) {
 	fgets(buffer, sizeof(buffer), fp);
 	
 	int found = 0;
-	char name[100];
+	char name[NAME_SIZE];
 	char *nextptr, *endptr;
 	while(fgets(buffer, sizeof(buffer), fp)) {
 		nextptr = get_name(name, buffer);
@@ -114,10 +122,9 @@ int read_proc(char *interface, struct log *netlog) {
 	return 0; 
 }
 
-
 int read_ifconfig(char *interface, struct log *netlog) {
 	FILE *fp;
-	char buffer[512];
+	char buffer[READ_STR_SIZE];
 	
 	fp = popen("ifconfig", "r");
 	if(fp == NULL) { // fork or pipe calls fail, or if it cannot allocate memory
@@ -126,7 +133,7 @@ int read_ifconfig(char *interface, struct log *netlog) {
 	
 	
 	int found = 0;
-	char name[100];
+	char name[NAME_SIZE];
 	char *nextptr, *endptr;
 	while(fgets(buffer, sizeof(buffer), fp)) {
 		get_ifconfig_name(name, buffer);
