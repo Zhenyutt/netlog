@@ -2,14 +2,15 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
-#include <time.h>
 #include <unistd.h>
-#include <ctype.h>
+#include <time.h>
 #include <sys/timeb.h>
 
-#ifndef METHOD
-#define METHOD
+#ifndef READ_FROM_PROC
 #define READ_FROM_PROC 1
+#endif
+
+#ifndef READ_FROM_IFCONFIG
 #define READ_FROM_IFCONFIG 2
 #endif
 
@@ -22,59 +23,25 @@
 #endif
 
 struct log {
+	char name[NAME_SIZE];
 	unsigned long long rx_bytes;
-	unsigned long long tx_bytes;
+    unsigned long long rx_packets;
+	unsigned long rx_errors;
+    unsigned long rx_dropped;
+    unsigned long rx_fifo_errors;
+    unsigned long rx_frame_errors;
+	unsigned long rx_compressed;
+	unsigned long rx_multicast;
+    unsigned long long tx_bytes;
+    unsigned long long tx_packets;
+	unsigned long tx_errors;
+    unsigned long tx_dropped;
+    unsigned long tx_fifo_errors;
+    unsigned long collisions;
+	unsigned long tx_carrier_errors;
+	unsigned long tx_compressed;
 };
 
-
-// from interface.c
-char *get_name(char *name, char *p)	{
-	while (isspace(*p))
-       p++;
-    while (*p) {
-       if (isspace(*p))
-           break;
-       if (*p == ':') {     /* could be an alias */
-           char *dot = p, *dotname = name;
-           *name++ = *p++;
-           while (isdigit(*p))
-              *name++ = *p++;
-           if (*p != ':') { /* it wasn't, backup */
-              p = dot;
-              name = dotname;
-           }
-           if (*p == '\0')
-              return NULL;
-           p++;
-           break;
-       }
-       *name++ = *p++;
-    }
-    *name++ = '\0';
-    return p;
-}
-
-int get_ifconfig_name(char *name, char *p) {
-	while(*p) {
-		if(isspace(*p)) {
-			*name = '\0';
-			break;
-		}
-		*name++ = *p++;
-	}
-	return 0;
-}
-
-char *find_colon(char *p) {
-	while(*p) {
-		if(*p == ':') {
-			*p++;
-			return p;
-		}
-		*p++;
-	}
-	return NULL;
-}
 
 int read_proc(char *interface, struct log *netlog) {
 	FILE *fp;
@@ -89,26 +56,37 @@ int read_proc(char *interface, struct log *netlog) {
 	fgets(buffer, sizeof(buffer), fp);
 	fgets(buffer, sizeof(buffer), fp);
 	
+	int read_num;
 	int found = 0;
-	char name[NAME_SIZE];
-	char *nextptr, *endptr;
 	while(fgets(buffer, sizeof(buffer), fp)) {
-		nextptr = get_name(name, buffer);
+		read_num = sscanf(buffer, "%s %llu %llu %lu %lu %lu %lu %lu %lu %llu %llu %lu %lu %lu %lu %lu %lu",
+			netlog->name,
+			&netlog->rx_bytes,
+			&netlog->rx_packets,
+			&netlog->rx_errors,
+			&netlog->rx_dropped,
+			&netlog->rx_fifo_errors,
+			&netlog->rx_frame_errors,
+			&netlog->rx_compressed,
+			&netlog->rx_multicast,
+			&netlog->tx_bytes,
+			&netlog->tx_packets,
+			&netlog->tx_errors,
+			&netlog->tx_dropped,
+			&netlog->tx_fifo_errors,
+			&netlog->collisions,
+			&netlog->tx_carrier_errors,
+			&netlog->tx_compressed
+			);
+		if(read_num != 17) {
+			fprintf(stderr, "Number of input item error in proc\n");
+			return -1;
+		}
+		
+		// replace ':' with '\0'
+		netlog->name[strlen(netlog->name) - 1] = '\0';
 
-		if(strcmp(interface, name) == 0) { // Interface is found
-			netlog->rx_bytes = strtoull(nextptr, &endptr, 10); // read rx_bytes
-			nextptr = endptr;
-			
-			// ignore 7 numbers
-			for(int i = 0; i < 7; i++) {
-				while(isspace(*nextptr))
-					nextptr++;
-				while(isdigit(*nextptr))
-					nextptr++;
-			}
-			
-			netlog->tx_bytes = strtoull(nextptr, &endptr, 10); // read tx_bytes
-			
+		if(strcmp(interface, netlog->name) == 0) { // Interface is found
 			found = 1;
 			break;
 		}
@@ -131,27 +109,30 @@ int read_ifconfig(char *interface, struct log *netlog) {
 		return -1;
 	}
 	
-	
 	int found = 0;
-	char name[NAME_SIZE];
-	char *nextptr, *endptr;
+	char *strptr = NULL;
 	while(fgets(buffer, sizeof(buffer), fp)) {
-		get_ifconfig_name(name, buffer);
-		if(strcmp(interface, name) == 0) {
-			for(int i = 0; i < 7; i++) {
-				fgets(buffer, sizeof(buffer), fp);
+		sscanf(buffer, "%s", netlog->name);
+		if(strcmp(interface, netlog->name) == 0) { // interface is found
+			while(fgets(buffer, sizeof(buffer), fp)) {
+				strptr = strstr(buffer, "RX bytes:");
+				if(strptr != NULL) {
+					sscanf(strptr, "%*[^0-9]%llu", &netlog->rx_bytes);
+				}
+				strptr = strstr(buffer, "TX bytes:");
+				if(strptr != NULL) {
+					sscanf(strptr, "%*[^0-9]%llu", &netlog->tx_bytes);
+				}
 			}
-			nextptr = find_colon(buffer);
-			netlog->rx_bytes = strtoull(nextptr, &endptr, 10); // read rx_bytes
-			nextptr = find_colon(endptr);
-			netlog->tx_bytes = strtoull(nextptr, &endptr, 10); // read tx_bytes
-			
 			found = 1;
 			break;
 		}
-		// ignore 8 lines
-		for(int i = 0; i < 8; i++) {
-			fgets(buffer, sizeof(buffer), fp);
+		
+		// find next interface
+		while(fgets(buffer, sizeof(buffer), fp)) { 
+			if(buffer[0] == '\n') {
+				break;
+			}
 		}
 	}
 	pclose(fp);
