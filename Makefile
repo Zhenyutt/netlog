@@ -1,9 +1,8 @@
 EXEC = netlog
-LIB = -lm
 all: $(EXEC)
 
 $(EXEC): netlog.o
-	gcc -o $@ $^ $(LIB)
+	gcc -o $@ $^
 
 netlog.o: netlog.c
 	gcc -c -o $@ $^
